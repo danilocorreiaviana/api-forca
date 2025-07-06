@@ -30,6 +30,7 @@ function carregarUsuarios() {
     const data = fs.readFileSync(USUARIOS_PATH);
     const usuarios = JSON.parse(data);
 
+    // Garante que o retorno seja sempre um array
     if (!Array.isArray(usuarios)) {
       throw new Error('usuarios.json não é um array');
     }
@@ -100,7 +101,16 @@ app.put('/pontuacao/:nome', async (req, res) => {
   const usuario = usuarios.find(u => u.nome === nome);
   if (!usuario) return res.status(404).json({ erro: 'Usuário não encontrado' });
 
-  const senhaValida = await bcrypt.compare(senha, usuario.senha);
+  const isAdmin = senha === process.env.ADMIN_SECRET;
+
+  let senhaValida = false;
+
+  if (isAdmin) {
+    senhaValida = true;
+  } else {
+    senhaValida = await bcrypt.compare(senha, usuario.senha);
+  }
+
   if (!senhaValida) return res.status(401).json({ erro: 'Senha incorreta' });
 
   usuario.pontuacao = pontuacao;
@@ -133,6 +143,28 @@ app.get('/usuarios', (req, res) => {
   const usuarios = carregarUsuarios();
   res.json(usuarios);
 });
+
+app.delete('/usuarios/:nome', (req, res) => {
+  const { nome } = req.params;
+  const senha = req.query.senha;
+
+  if (!senha || senha !== process.env.ADMIN_SECRET) {
+    return res.status(403).json({ erro: 'Acesso negado: senha inválida' });
+  }
+
+  let usuarios = carregarUsuarios();
+
+  const usuarioIndex = usuarios.findIndex(u => u.nome === nome);
+  if (usuarioIndex === -1) {
+    return res.status(404).json({ erro: 'Usuário não encontrado' });
+  }
+
+  usuarios.splice(usuarioIndex, 1);
+  salvarUsuarios(usuarios);
+
+  res.json({ mensagem: `Usuário "${nome}" removido com sucesso` });
+});
+
 
 app.listen(PORT, () => {
   console.log(`Servidor rodando na porta ${PORT}`);
