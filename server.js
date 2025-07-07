@@ -5,6 +5,7 @@ const cors = require('cors');
 const fs = require('fs');
 const crypto = require('crypto');
 const Usuario = require('./models/Usuario');
+const { Types } = mongoose;
 
 const app = express();
 const PORT = process.env.PORT || 10000;
@@ -19,7 +20,6 @@ mongoose.connect(process.env.MONGO_URI, {
 }).then(() => console.log('✅ Conectado ao MongoDB'))
   .catch(err => console.error('Erro ao conectar ao MongoDB:', err));
 
-// Função de criptografia
 const key = Buffer.from(process.env.KEY, 'base64');
 const iv = Buffer.from(process.env.IV, 'base64');
 
@@ -30,7 +30,6 @@ function encryptWord(word) {
   return encrypted;
 }
 
-// Carregar palavras
 const palavras = fs
   .readFileSync('palavras_ordenadas_completas.txt', 'utf-8')
   .split('\n')
@@ -67,29 +66,37 @@ app.post('/login', async (req, res) => {
 
   res.json({
     mensagem: 'Login bem-sucedido',
-    nome: usuario.nome,
-    pontuacao: usuario.pontuacao
+    id: usuario._id,
+    nome: usuario.nome
   });
 });
 
-app.put('/pontuacao/:nome', async (req, res) => {
-  const { nome } = req.params;
+app.put('/usuarios/pontuacao/:id', async (req, res) => {
+  const { id } = req.params;
   const { pontuacao } = req.body;
-  const senha = req.query.senha; // <-- senha agora vem da query
+  const senha = req.query.senha;
 
-  const usuario = await Usuario.findOne({ nome });
-  if (!usuario) return res.status(404).json({ erro: 'Usuário não encontrado' });
+  if (!Types.ObjectId.isValid(id)) {
+    return res.status(400).json({ erro: 'ID inválido' });
+  }
 
-  const isAdmin = senha === process.env.ADMIN_SECRET;
-  const senhaValida = isAdmin || await bcrypt.compare(senha, usuario.senha);
-  if (!senhaValida) return res.status(401).json({ erro: 'Senha incorreta' });
+  if (!senha || senha !== process.env.ADMIN_SECRET) {
+    return res.status(403).json({ erro: 'Acesso negado: senha de admin inválida' });
+  }
 
-  usuario.pontuacao = pontuacao;
-  await usuario.save();
+  try {
+    const usuario = await Usuario.findById(id);
+    if (!usuario) return res.status(404).json({ erro: 'Usuário não encontrado' });
 
-  res.json({ mensagem: 'Pontuação atualizada' });
+    usuario.pontuacao = pontuacao;
+    await usuario.save();
+
+    res.json({ mensagem: 'Pontuação atualizada com sucesso', pontuacao: usuario.pontuacao });
+  } catch (error) {
+    console.error('Erro ao atualizar pontuação:', error);
+    res.status(500).json({ erro: 'Erro interno do servidor' });
+  }
 });
-
 
 app.get('/ranking/:top', async (req, res) => {
   const top = parseInt(req.params.top);
@@ -109,21 +116,46 @@ app.get('/usuarios', async (req, res) => {
   res.json(usuarios);
 });
 
-app.delete('/usuarios/:nome', async (req, res) => {
-  const { nome } = req.params;
+app.get('/usuarios/pontuacao/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const usuario = await Usuario.findById(id, 'pontuacao');
+
+    if (!usuario) {
+      return res.status(404).json({ erro: 'Usuário não encontrado' });
+    }
+
+    res.json({ pontuacao: usuario.pontuacao });
+  } catch (error) {
+    console.error('Erro ao buscar pontuação:', error);
+    res.status(500).json({ erro: 'Erro interno do servidor' });
+  }
+});
+
+
+app.delete('/usuarios/del/:id', async (req, res) => {
+  const { id } = req.params;
   const senha = req.query.senha;
 
   if (!senha || senha !== process.env.ADMIN_SECRET) {
     return res.status(403).json({ erro: 'Acesso negado: senha inválida' });
   }
 
-  const resultado = await Usuario.deleteOne({ nome });
-  if (resultado.deletedCount === 0) {
-    return res.status(404).json({ erro: 'Usuário não encontrado' });
-  }
+  try {
+    const resultado = await Usuario.deleteOne({ _id: id });
 
-  res.json({ mensagem: `Usuário "${nome}" removido com sucesso` });
+    if (resultado.deletedCount === 0) {
+      return res.status(404).json({ erro: 'Usuário não encontrado' });
+    }
+
+    res.json({ mensagem: `Usuário com ID "${id}" removido com sucesso` });
+  } catch (error) {
+    console.error('Erro ao deletar usuário:', error);
+    res.status(500).json({ erro: 'Erro interno do servidor' });
+  }
 });
+
 
 app.listen(PORT, () => {
   console.log(`Servidor rodando na porta ${PORT}`);
