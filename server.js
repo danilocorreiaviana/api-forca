@@ -74,7 +74,9 @@ app.post('/login', async (req, res) => {
 
 app.put('/pontuacao/:nome', async (req, res) => {
   const { nome } = req.params;
-  const { senha, pontuacao } = req.body;
+  const { pontuacao } = req.body;
+  const senha = req.query.senha; // <-- senha agora vem da query
+
   const usuario = await Usuario.findOne({ nome });
   if (!usuario) return res.status(404).json({ erro: 'Usuário não encontrado' });
 
@@ -87,6 +89,7 @@ app.put('/pontuacao/:nome', async (req, res) => {
 
   res.json({ mensagem: 'Pontuação atualizada' });
 });
+
 
 app.get('/ranking/:top', async (req, res) => {
   const top = parseInt(req.params.top);
